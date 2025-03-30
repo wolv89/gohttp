@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 )
 
 func main() {
@@ -15,27 +16,62 @@ func main() {
 	}
 	defer messages.Close()
 
+	ch := getLinesChannel(messages)
+
+	for {
+		str, status := <-ch
+		if !status {
+			break
+		}
+		fmt.Printf("read: %s\n", str)
+	}
+
+}
+
+func getLinesChannel(f io.ReadCloser) <-chan string {
+
 	const READ = 8
 
 	bytes := make([]byte, READ)
-	var n int
+	ch := make(chan string)
 
-	for {
+	var (
+		curr, line string
+		err        error
+		n          int
+	)
 
-		n, err = messages.Read(bytes)
+	go func() {
+		for {
 
-		if n < READ {
-			bytes = make([]byte, n)
-			messages.Seek(int64(-n), io.SeekCurrent)
-			n, err = messages.Read(bytes)
+			n, err = f.Read(bytes)
+			if n == 0 || err != nil {
+				break
+			}
+
+			curr = string(bytes[:n])
+			parts := strings.Split(curr, "\n")
+
+			if len(parts) <= 1 {
+				line += curr
+				continue
+			}
+
+			line += parts[0]
+
+			ch <- line
+
+			line = parts[1]
+
 		}
 
-		if n == 0 || err != nil {
-			break
+		if len(line) > 0 {
+			ch <- line
 		}
 
-		fmt.Printf("read: %s\n", bytes)
+		close(ch)
+	}()
 
-	}
+	return ch
 
 }
