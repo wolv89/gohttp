@@ -3,13 +3,15 @@ package request
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 )
 
 type Request struct {
 	RequestLine RequestLine
-	ParseStatus parseStatus
+
+	state requestState
 }
 
 type RequestLine struct {
@@ -18,97 +20,117 @@ type RequestLine struct {
 	Method        string
 }
 
-const (
-	HTTP_VERSION = "HTTP/1.1"
-	CRLF         = "\r\n"
-)
-
-type parseStatus int
+type requestState int
 
 const (
-	parseStatusInitialised parseStatus = iota
-	parseStatusDone
+	requestStateInitialized requestState = iota
+	requestStateDone
 )
+
+const crlf = "\r\n"
+const bufferSize = 8
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-
-	req := Request{
-		ParseStatus: parseStatusInitialised,
+	buf := make([]byte, bufferSize)
+	readToIndex := 0
+	req := &Request{
+		state: requestStateInitialized,
 	}
+	for req.state != requestStateDone {
+		if readToIndex >= len(buf) {
+			newBuf := make([]byte, len(buf)*2)
+			copy(newBuf, buf)
+			buf = newBuf
+		}
 
-	for req.ParseStatus != parseStatusDone {
-
-		buf := bytes.NewBuffer(make([]byte, 0, 8))
-		n, err := buf.ReadFrom(reader)
-
+		numBytesRead, err := reader.Read(buf[readToIndex:])
 		if err != nil {
-			return nil, errors.New("error reading request: " + err.Error())
+			if errors.Is(err, io.EOF) {
+				req.state = requestStateDone
+				break
+			}
+			return nil, err
 		}
+		readToIndex += numBytesRead
 
-		p, err := req.parse(buf.Bytes())
-
+		numBytesParsed, err := req.parse(buf[:readToIndex])
 		if err != nil {
-			return nil, errors.New("error parsing request: " + err.Error())
+			return nil, err
 		}
 
-		if n == p {
-			req.ParseStatus = parseStatusDone
-		}
-
+		copy(buf, buf[numBytesParsed:])
+		readToIndex -= numBytesParsed
 	}
-
-	return &req, nil
-
+	return req, nil
 }
 
-func (r *Request) parse(data []byte) (int64, error) {
-
-	bytesRead, requestLine, err := parseRequestLine(data)
+func parseRequestLine(data []byte) (*RequestLine, int, error) {
+	idx := bytes.Index(data, []byte(crlf))
+	if idx == -1 {
+		return nil, 0, nil
+	}
+	requestLineText := string(data[:idx])
+	requestLine, err := requestLineFromString(requestLineText)
 	if err != nil {
-		return 0, errors.New("error while parsing request line: " + err.Error())
+		return nil, 0, err
 	}
-
-	if bytesRead == 0 {
-		return 0, nil
-	}
-
-	r.RequestLine = requestLine
-	return bytesRead, nil
-
+	return requestLine, idx + 2, nil
 }
 
-func parseRequestLine(data []byte) (int64, RequestLine, error) {
-
-	nextCLRF := bytes.Index(data, []byte(CRLF))
-	if nextCLRF <= 0 {
-		return 0, RequestLine{}, nil
-	}
-
-	line := string(data[:nextCLRF])
-
-	parts := strings.Split(line, " ")
-	requestLine := RequestLine{}
-
+func requestLineFromString(str string) (*RequestLine, error) {
+	parts := strings.Split(str, " ")
 	if len(parts) != 3 {
-		return 0, requestLine, errors.New("invalid request line: " + line)
+		return nil, fmt.Errorf("poorly formatted request-line: %s", str)
 	}
 
-	requestLine.Method = parts[0]
-	requestLine.RequestTarget = parts[1]
-	requestLine.HttpVersion = parts[2]
-
-	for _, m := range requestLine.Method {
-		if m < 'A' || m > 'Z' {
-			return 0, requestLine, errors.New("invalid request method: " + requestLine.Method)
+	method := parts[0]
+	for _, c := range method {
+		if c < 'A' || c > 'Z' {
+			return nil, fmt.Errorf("invalid method: %s", method)
 		}
 	}
 
-	if requestLine.HttpVersion != HTTP_VERSION {
-		return 0, requestLine, errors.New("invalid http version: " + requestLine.HttpVersion + ", expecting: " + HTTP_VERSION)
+	requestTarget := parts[1]
+
+	versionParts := strings.Split(parts[2], "/")
+	if len(versionParts) != 2 {
+		return nil, fmt.Errorf("malformed start-line: %s", str)
 	}
 
-	requestLine.HttpVersion = "1.1"
+	httpPart := versionParts[0]
+	if httpPart != "HTTP" {
+		return nil, fmt.Errorf("unrecognized HTTP-version: %s", httpPart)
+	}
+	version := versionParts[1]
+	if version != "1.1" {
+		return nil, fmt.Errorf("unrecognized HTTP-version: %s", version)
+	}
 
-	return int64(len(line)), requestLine, nil
+	return &RequestLine{
+		Method:        method,
+		RequestTarget: requestTarget,
+		HttpVersion:   versionParts[1],
+	}, nil
+}
 
+func (r *Request) parse(data []byte) (int, error) {
+	switch r.state {
+	case requestStateInitialized:
+		requestLine, n, err := parseRequestLine(data)
+		if err != nil {
+			// something actually went wrong
+			return 0, err
+		}
+		if n == 0 {
+			// just need more data
+			return 0, nil
+		}
+		r.RequestLine = *requestLine
+		r.state = requestStateDone
+		return n, nil
+	case requestStateDone:
+		return 0, fmt.Errorf("error: trying to read data in a done state")
+	default:
+		return 0, fmt.Errorf("unknown state")
+	}
 }

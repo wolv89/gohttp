@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"strings"
+
+	"github.com/wolv89/gohttp/internal/request"
 )
 
 func main() {
@@ -23,60 +23,13 @@ func main() {
 			log.Fatal(err)
 		}
 
-		ch := getLinesChannel(cn)
-
-		for line := range ch {
-			fmt.Println(line)
+		req, err := request.RequestFromReader(cn)
+		if err != nil {
+			log.Fatal(err)
 		}
+
+		fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s", req.RequestLine.Method, req.RequestLine.RequestTarget, req.RequestLine.HttpVersion)
 
 	}
-
-}
-
-func getLinesChannel(f io.ReadCloser) <-chan string {
-
-	const READ = 8
-
-	bytes := make([]byte, READ)
-	ch := make(chan string)
-
-	var (
-		curr, line string
-		err        error
-		n          int
-	)
-
-	go func() {
-		for {
-
-			n, err = f.Read(bytes)
-			if n == 0 || err != nil {
-				break
-			}
-
-			curr = string(bytes[:n])
-			parts := strings.Split(curr, "\n")
-
-			if len(parts) <= 1 {
-				line += curr
-				continue
-			}
-
-			line += parts[0]
-
-			ch <- line
-
-			line = parts[1]
-
-		}
-
-		if len(line) > 0 {
-			ch <- line
-		}
-
-		close(ch)
-	}()
-
-	return ch
 
 }
