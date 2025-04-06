@@ -37,6 +37,11 @@ func main() {
 			}
 		}
 
+		if len(req.Body) > 0 {
+			fmt.Print("\nBody:\n")
+			fmt.Print(string(req.Body))
+		}
+
 	}
 
 }

@@ -5,16 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/wolv89/gohttp/internal/headers"
 )
 
 type Request struct {
-	RequestLine RequestLine
-	Headers     headers.Headers
-
-	state requestState
+	RequestLine   RequestLine
+	Headers       headers.Headers
+	Body          []byte
+	state         requestState
+	contentLength int
 }
 
 type RequestLine struct {
@@ -28,6 +30,7 @@ type requestState int
 const (
 	requestStateInitialized requestState = iota
 	requestStateParsingHeaders
+	requestStateParsingBody
 	requestStateDone
 )
 
@@ -156,9 +159,39 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 			return 0, err
 		}
 		if done {
-			r.state = requestStateDone
+
+			contentLength := r.Headers.Get("Content-Length")
+			if len(contentLength) == 0 {
+				r.state = requestStateDone
+				return 0, nil
+			}
+			cl, err := strconv.Atoi(contentLength)
+			// Malformed content length header?!
+			if err != nil {
+				return 0, err
+			}
+			if cl <= 0 {
+				r.state = requestStateDone
+				return 0, nil
+			}
+
+			r.contentLength = cl
+			r.state = requestStateParsingBody
 		}
 		return n, nil
+	case requestStateParsingBody:
+
+		if len(data) < r.contentLength {
+			return 0, nil
+		}
+		if len(data) > r.contentLength {
+			return 0, fmt.Errorf("error: invalid content length header given (%d)", r.contentLength)
+		}
+
+		r.Body = append(r.Body, data...)
+		r.state = requestStateDone
+		return r.contentLength, nil
+
 	case requestStateDone:
 		return 0, fmt.Errorf("error: trying to read data in a done state")
 	default:
