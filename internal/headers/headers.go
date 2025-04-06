@@ -14,7 +14,7 @@ func NewHeaders() Headers {
 	return map[string]string{}
 }
 
-func (h Headers) Parse(data []byte) (n int, done bool, err error) {
+func (h *Headers) Parse(data []byte) (n int, done bool, err error) {
 	idx := bytes.Index(data, []byte(crlf))
 	if idx == -1 {
 		return 0, false, nil
@@ -41,9 +41,19 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	return idx + 2, false, nil
 }
 
-func (h Headers) Set(key, value string) {
+func (h *Headers) Set(key, value string) {
 	key = strings.ToLower(key)
-	h[key] = value
+
+	// No pre-exising value, set directly
+	if _, ok := (*h)[key]; !ok {
+		(*h)[key] = value
+		return
+	}
+
+	// Else, concat
+	curr := (*h)[key]
+	(*h)[key] = fmt.Sprintf("%s, %s", curr, value)
+
 }
 
 var tokenChars = []byte{'!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'}
