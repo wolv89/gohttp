@@ -37,6 +37,16 @@ func main() {
 			return
 		}
 
+		if req.RequestLine.RequestTarget == "/video" {
+			w.WriteStatusLine(response.StatusCodeOK)
+			hdrs.Replace("Content-Type", "video/mp4")
+			raw, _ := os.ReadFile("assets/vim.mp4")
+			hdrs.Replace("Content-Length", fmt.Sprintf("%d", len(raw)))
+			w.WriteHeaders(hdrs)
+			w.WriteBody(raw)
+			return
+		}
+
 		w.WriteStatusLine(response.StatusCodeOK)
 		hdrs.Replace("Content-Length", fmt.Sprintf("%d", len(HTML_OK)))
 		w.WriteHeaders(hdrs)
