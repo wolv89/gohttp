@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"net"
@@ -123,8 +125,13 @@ func HandleProxy(conn net.Conn, req *request.Request, resp *response.Writer, fro
 	resp.WriteStatusLine(response.StatusCodeOK)
 
 	hdrs.Set("Transfer-Encoding", "chunked")
+	hdrs.Set("Trailer", "X-Content-Sha256")
+	hdrs.Set("Trailer", "X-Content-Length")
 
 	resp.WriteHeaders(hdrs)
+
+	totalLength := 0
+	var totalBody bytes.Buffer
 
 	for {
 
@@ -136,10 +143,20 @@ func HandleProxy(conn net.Conn, req *request.Request, resp *response.Writer, fro
 		}
 
 		resp.WriteChunkedBody(buf[:n])
+		totalLength += n
+		totalBody.Write(buf[:n])
 
 	}
 
 	resp.WriteChunkedBodyDone()
+
+	sum := sha256.Sum256(totalBody.Bytes())
+
+	trailers := headers.NewHeaders()
+	trailers.Set("X-Content-Sha256", fmt.Sprintf("%x", sum))
+	trailers.Set("X-Content-Length", fmt.Sprintf("%d", totalLength))
+
+	resp.WriteHeaders(trailers)
 
 	conn.Write(resp.Bytes())
 
