@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/wolv89/gohttp/internal/request"
+	"github.com/wolv89/gohttp/internal/response"
 )
 
 type Server struct {
@@ -73,12 +74,11 @@ func (s *Server) handle(conn net.Conn) {
 		log.Fatal(err)
 	}
 
-	resp := `HTTP/1.1 200 OK
-Content-Type: text/plain
+	response.WriteStatusLine(conn, response.StatusCodeOK)
+	response.WriteHeaders(conn, response.GetDefaultHeaders(0))
 
-Hello World!`
+	conn.Write([]byte("\r\n"))
 
-	conn.Write([]byte(resp))
 	conn.Close()
 
 }
