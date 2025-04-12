@@ -68,6 +68,8 @@ func WriteHeaders(w io.Writer, hdrs headers.Headers) error {
 		w.Write([]byte(fmt.Sprintf("%s: %s%s", key, val, crlf)))
 	}
 
+	w.Write([]byte(crlf))
+
 	return nil
 
 }

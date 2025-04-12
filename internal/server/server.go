@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -11,16 +12,18 @@ import (
 )
 
 type Server struct {
+	handler  Handler
 	listener net.Listener
 	port     int
 	closed   atomic.Bool
 }
 
-func Serve(port int) (*Server, error) {
+func Serve(port int, handler Handler) (*Server, error) {
 
 	server := Server{
-		port:   port,
-		closed: atomic.Bool{},
+		handler: handler,
+		port:    port,
+		closed:  atomic.Bool{},
 	}
 
 	var err error
@@ -69,16 +72,26 @@ func (s *Server) Close() error {
 
 func (s *Server) handle(conn net.Conn) {
 
-	_, err := request.RequestFromReader(conn)
+	defer conn.Close()
+
+	req, err := request.RequestFromReader(conn)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	var resp bytes.Buffer
+
+	herr := s.handler(&resp, req)
+
+	if herr != nil {
+		response.WriteStatusLine(conn, herr.StatusCode)
+		response.WriteHeaders(conn, response.GetDefaultHeaders(len(herr.Message.Error())))
+		conn.Write([]byte(herr.Message.Error()))
+		return
+	}
+
 	response.WriteStatusLine(conn, response.StatusCodeOK)
-	response.WriteHeaders(conn, response.GetDefaultHeaders(0))
-
-	conn.Write([]byte("\r\n"))
-
-	conn.Close()
+	response.WriteHeaders(conn, response.GetDefaultHeaders(resp.Len()))
+	conn.Write(resp.Bytes())
 
 }
