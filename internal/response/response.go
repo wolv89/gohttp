@@ -3,7 +3,6 @@ package response
 import (
 	"bytes"
 	"fmt"
-	"io"
 
 	"github.com/wolv89/gohttp/internal/headers"
 )
@@ -18,7 +17,19 @@ const (
 	StatusCodeInternalServerError StatusCode = 500
 )
 
-func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
+type Writer struct {
+	response bytes.Buffer
+}
+
+func (w *Writer) Write(p []byte) (int, error) {
+	return w.response.Write(p)
+}
+
+func (w Writer) Bytes() []byte {
+	return w.response.Bytes()
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 
 	if statusCode < 100 || statusCode > 600 {
 		return fmt.Errorf("invalid status code: %d", statusCode)
@@ -58,7 +69,7 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 
 }
 
-func WriteHeaders(w io.Writer, hdrs headers.Headers) error {
+func (w *Writer) WriteHeaders(hdrs headers.Headers) error {
 
 	if len(hdrs) == 0 {
 		return fmt.Errorf("no headers provided")
@@ -72,4 +83,8 @@ func WriteHeaders(w io.Writer, hdrs headers.Headers) error {
 
 	return nil
 
+}
+
+func (w *Writer) WriteBody(p []byte) (int, error) {
+	return w.Write(p)
 }

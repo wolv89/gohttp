@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -17,24 +16,31 @@ const port = 42069
 
 func main() {
 
-	handler := func(w io.Writer, req *request.Request) *server.HandlerError {
+	handler := func(w *response.Writer, req *request.Request) {
 
-		switch req.RequestLine.RequestTarget {
-		case "/yourproblem":
-			return &server.HandlerError{
-				Message:    fmt.Errorf("Your problem is not my problem\n"),
-				StatusCode: response.StatusCodeBadRequest,
-			}
-		case "/myproblem":
-			return &server.HandlerError{
-				Message:    fmt.Errorf("Woopsie, my bad\n"),
-				StatusCode: response.StatusCodeInternalServerError,
-			}
+		hdrs := response.GetDefaultHeaders(0)
+		hdrs.Replace("Content-Type", "text/html")
+
+		if req.RequestLine.RequestTarget == "/yourproblem" {
+			w.WriteStatusLine(response.StatusCodeBadRequest)
+			hdrs.Replace("Content-Length", fmt.Sprintf("%d", len(HTML_BAD_REQUEST)))
+			w.WriteHeaders(hdrs)
+			w.WriteBody([]byte(HTML_BAD_REQUEST))
+			return
 		}
 
-		w.Write([]byte("All good, frfr\n"))
+		if req.RequestLine.RequestTarget == "/myproblem" {
+			w.WriteStatusLine(response.StatusCodeInternalServerError)
+			hdrs.Replace("Content-Length", fmt.Sprintf("%d", len(HTML_INTERNAL_SERVER_ERROR)))
+			w.WriteHeaders(hdrs)
+			w.WriteBody([]byte(HTML_INTERNAL_SERVER_ERROR))
+			return
+		}
 
-		return nil
+		w.WriteStatusLine(response.StatusCodeOK)
+		hdrs.Replace("Content-Length", fmt.Sprintf("%d", len(HTML_OK)))
+		w.WriteHeaders(hdrs)
+		w.WriteBody([]byte(HTML_OK))
 
 	}
 
@@ -50,3 +56,33 @@ func main() {
 	<-sigChan
 	log.Println("Server gracefully stopped")
 }
+
+const HTML_BAD_REQUEST = `<html>
+  <head>
+    <title>400 Bad Request</title>
+  </head>
+  <body>
+    <h1>Bad Request</h1>
+    <p>Your request honestly kinda sucked.</p>
+  </body>
+</html>`
+
+const HTML_INTERNAL_SERVER_ERROR = `<html>
+  <head>
+    <title>500 Internal Server Error</title>
+  </head>
+  <body>
+    <h1>Internal Server Error</h1>
+    <p>Okay, you know what? This one is on me.</p>
+  </body>
+</html>`
+
+const HTML_OK = `<html>
+  <head>
+    <title>200 OK</title>
+  </head>
+  <body>
+    <h1>Success!</h1>
+    <p>Your request was an absolute banger.</p>
+  </body>
+</html>`

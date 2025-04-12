@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -79,19 +78,9 @@ func (s *Server) handle(conn net.Conn) {
 		log.Fatal(err)
 	}
 
-	var resp bytes.Buffer
+	var resp response.Writer
+	s.handler(&resp, req)
 
-	herr := s.handler(&resp, req)
-
-	if herr != nil {
-		response.WriteStatusLine(conn, herr.StatusCode)
-		response.WriteHeaders(conn, response.GetDefaultHeaders(len(herr.Message.Error())))
-		conn.Write([]byte(herr.Message.Error()))
-		return
-	}
-
-	response.WriteStatusLine(conn, response.StatusCodeOK)
-	response.WriteHeaders(conn, response.GetDefaultHeaders(resp.Len()))
 	conn.Write(resp.Bytes())
 
 }
