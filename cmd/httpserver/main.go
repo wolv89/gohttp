@@ -44,7 +44,11 @@ func main() {
 
 	}
 
-	server, err := server.Serve(port, handler)
+	proxy := map[string]string{
+		"/httpbin": "https://httpbin.org",
+	}
+
+	server, err := server.Serve(port, handler, proxy)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}
